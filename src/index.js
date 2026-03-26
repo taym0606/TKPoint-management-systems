@@ -169,11 +169,6 @@ async function handleBattle(interaction, userId, env) {
   await ensureUser(targetId, env.DB);
   const now = Date.now();
 
-  const requester = await env.DB.prepare('SELECT last_battle_at FROM users WHERE user_id = ?').bind(userId).first();
-  if (now - (requester?.last_battle_at ?? 0) < THREE_DAYS_MS) {
-    return interactionResponse('今はお休みの時間だにゃ～～。', true);
-  }
-
   const battleId = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO battles (id, player_a, player_b, bet_a, bet_b, status, thread_id, result, created_at)
