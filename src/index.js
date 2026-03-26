@@ -590,22 +590,3 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-
-async function ensureUsersTableColumns(db) {
-  try {
-    await db.prepare("ALTER TABLE users ADD COLUMN user_name TEXT DEFAULT ''").run();
-  } catch {
-    // already exists
-  }
-}
-
-function getInteractionDisplayName(interaction, fallback = '') {
-  return (
-    interaction.member?.nick ??
-    interaction.member?.user?.global_name ??
-    interaction.member?.user?.username ??
-    interaction.user?.global_name ??
-    interaction.user?.username ??
-    fallback
-  );
-}
