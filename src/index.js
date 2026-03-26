@@ -402,7 +402,7 @@ async function handleApprove(interaction, userId, env) {
     await env.DB.prepare(
       'UPDATE users SET point = point + ?, bonus_multiplier = bonus_multiplier + 0.1, last_battle_at = ? WHERE user_id = ?'
     )
-      .bind(loserNet, Date.now(), loser)
+      .bind(loss, Date.now(), loser)
       .run();
 
     // バトルステータス更新
