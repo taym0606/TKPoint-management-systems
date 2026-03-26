@@ -324,11 +324,8 @@ async function handleResult(interaction, userId, env) {
         loser,
         betA: battle.bet_a,
         betB: battle.bet_b,
-        winnerPoint,
-        loserPoint,
         insuranceUsed: false,
       }),
-      winnerPoint, // calculated_point に勝者ポイントを入れる
       Date.now()
     )
     .run();
