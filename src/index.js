@@ -275,7 +275,8 @@ function getCurrentWeekId() {
 }
 
 function normalizeAchievements(list) {
-  // ここで使える
+  if (!Array.isArray(list)) return [];
+  return list.map(x => String(x).trim());
 }
 
 
