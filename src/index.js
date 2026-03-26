@@ -316,8 +316,8 @@ async function handleResult(interaction, userId, env) {
      VALUES (?, 'resolve', ?, ?, ?, 'pending', ?)`
   )
     .bind(
-      requestId,
-      winner,
+      requestId,                         // id
+      winner,                            // user_id
       JSON.stringify({
         battleId: battle.id,
         winner,
@@ -325,8 +325,9 @@ async function handleResult(interaction, userId, env) {
         betA: battle.bet_a,
         betB: battle.bet_b,
         insuranceUsed: false,
-      }),
-      Date.now()
+      }),                                 // data
+      0,                                 // calculated_point（バトルなので一旦0）
+      Date.now()                          // created_at
     )
     .run();
 
