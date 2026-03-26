@@ -103,7 +103,7 @@ async function handlePoint(interaction, userId, env) {
   await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
   const displayName = getInteractionDisplayName(interaction, userId);
-  return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
+  return interactionResponse(`${displayName} くんの現在のポイントは... **${formatPoint(row?.point ?? 0)}**ptだよ!`);
 }
 
 async function handleSubmit(interaction, userId, env) {
@@ -111,7 +111,7 @@ async function handleSubmit(interaction, userId, env) {
 
   const subcommand = interaction.data?.options?.[0];
   if (!subcommand || subcommand.name !== 'score') {
-    return interactionResponse('/submit score のみ対応しています。', true);
+    return interactionResponse('/submit score のみ対応してるよ。', true);
   }
 
   const difficulty = getStringOption(subcommand.options, 'difficulty');
@@ -120,7 +120,7 @@ async function handleSubmit(interaction, userId, env) {
   const multiplied = getBooleanOption(subcommand.options, 'multiplied');
 
   if (!DIFFICULTY_MULTIPLIER[difficulty]) {
-    return interactionResponse('difficulty は 14+ / 14 / 13+ のみです。', true);
+    return interactionResponse('difficulty は 14+ / 14 / 13+ だけだよ！', true);
   }
 
   const weekId = getCurrentWeekId();
@@ -131,7 +131,7 @@ async function handleSubmit(interaction, userId, env) {
     .first();
 
   if (duplicate) {
-    return interactionResponse('この週の同難易度は既に承認済みです。', true);
+    return interactionResponse('すでに申請済みだよ～！ずるしないでね', true);
   }
 
   const score = calculateScorePoint({ difficulty, achievements, options, multiplied });
@@ -153,8 +153,8 @@ async function handleSubmit(interaction, userId, env) {
   await logAction(env.DB, userId, 'submit_score_request', score);
 
   return interactionResponse(
-    `スコア申請を作成しました。requestId: \
-${requestId}\n計算pt: **${formatPoint(score)}**（承認待ち）`
+    `君の今回頑張ったスコアを申請したよ! requestId: \
+${requestId}\n君の今回のポイントは...**${formatPoint(score)}**pt（承認待ち）`
   );
 }
 
@@ -163,7 +163,7 @@ async function handleBattle(interaction, userId, env) {
 
   const targetId = getUserOption(interaction.data?.options, 'user');
   if (!targetId || targetId === userId) {
-    return interactionResponse('有効な対戦相手を指定してください。', true);
+    return interactionResponse('君にふさわしい相手をちゃんと選んでね？', true);
   }
 
   await ensureUser(targetId, env.DB);
@@ -171,7 +171,7 @@ async function handleBattle(interaction, userId, env) {
 
   const requester = await env.DB.prepare('SELECT last_battle_at FROM users WHERE user_id = ?').bind(userId).first();
   if (now - (requester?.last_battle_at ?? 0) < THREE_DAYS_MS) {
-    return interactionResponse('対戦クールタイム中です（3日）。', true);
+    return interactionResponse('今はお休みの時間だにゃ～～。', true);
   }
 
   const battleId = crypto.randomUUID();
@@ -183,13 +183,13 @@ async function handleBattle(interaction, userId, env) {
     .run();
 
   await logAction(env.DB, userId, 'battle_create', 0);
-  return interactionResponse(`対戦を作成しました。battleId: ${battleId}`);
+  return interactionResponse(`対戦を作成したよ！頑張ろう！  battleId: ${battleId}`);
 }
 
 async function handleStartBattle(interaction, userId, env) {
   const amount = getNumberOption(interaction.data?.options, 'amount');
   if (!amount || amount <= 0) {
-    return interactionResponse('amount は 0 より大きい値を指定してください。', true);
+    return interactionResponse('amount は 0 より大きい値を指定してね！', true);
   }
 
   await ensureUser(userId, env.DB);
@@ -197,10 +197,10 @@ async function handleStartBattle(interaction, userId, env) {
   const me = await env.DB.prepare('SELECT point, last_battle_at FROM users WHERE user_id = ?').bind(userId).first();
 
   if ((me?.point ?? 0) < amount) {
-    return interactionResponse('所持ptが不足しています。', true);
+    return interactionResponse('そんなにポイント持ってないよ～！', true);
   }
   if (now - (me?.last_battle_at ?? 0) < THREE_DAYS_MS) {
-    return interactionResponse('対戦クールタイム中です（3日）。', true);
+    return interactionResponse('今はお休みの時間だにゃ～～', true);
   }
 
   const battle = await env.DB.prepare(
@@ -212,7 +212,7 @@ async function handleStartBattle(interaction, userId, env) {
     .first();
 
   if (!battle) {
-    return interactionResponse('開始可能な pending 対戦が見つかりません。', true);
+    return interactionResponse('まだ対戦相手見つけてないかも？/battleで対戦相手を選んでね♪', true);
   }
 
   const isA = battle.player_a === userId;
@@ -228,15 +228,15 @@ async function handleStartBattle(interaction, userId, env) {
 
   return interactionResponse(
     nextStatus === 'active'
-      ? `ベット確定。battleId: ${battle.id} は開始状態になりました。`
-      : `ベット受付。相手の入力待ちです。battleId: ${battle.id}`
+      ? `ベット確定するね♪ battleId: ${battle.id} はいつでも開始できるよ！`
+      : `ベット受付するね♪ 相手の入力待ちだよ～！battleId: ${battle.id}`
   );
 }
 
 async function handleResult(interaction, userId, env) {
   const result = getStringOption(interaction.data?.options, 'result');
   if (!['win', 'lose'].includes(result)) {
-    return interactionResponse('result は win または lose を指定してください。', true);
+    return interactionResponse('result は win または lose を指定してね！', true);
   }
 
   const battle = await env.DB.prepare(
@@ -248,7 +248,7 @@ async function handleResult(interaction, userId, env) {
     .first();
 
   if (!battle) {
-    return interactionResponse('進行中の対戦が見つかりません。', true);
+    return interactionResponse('まだ試合初めてないかも？', true);
   }
 
   const currentResult = safeJsonParse(battle.result, {});
@@ -260,11 +260,11 @@ async function handleResult(interaction, userId, env) {
   const bResult = currentResult[battle.player_b];
 
   if (!aResult || !bResult) {
-    return interactionResponse('結果を記録しました。相手の入力待ちです。');
+    return interactionResponse('君の結果は記録したよ！。相手を待ってね！');
   }
 
   if (aResult === bResult) {
-    return interactionResponse('結果が不一致です。管理者対応が必要です。', true);
+    return interactionResponse('あれ？結果があわないぞ？りむのんを呼んで～💦', true);
   }
 
   const winner = aResult === 'win' ? battle.player_a : battle.player_b;
@@ -292,7 +292,7 @@ async function handleResult(interaction, userId, env) {
 
   await env.DB.prepare("UPDATE battles SET status = 'awaiting_approval' WHERE id = ?").bind(battle.id).run();
 
-  return interactionResponse(`対戦精算requestを作成しました。requestId: ${requestId}`);
+  return interactionResponse(`よーし結果を入力できたね。お疲れ様！ りむのんに認証してもらってね♪ requestId: ${requestId}`);
 }
 
 async function handleApprove(interaction, userId, env) {
@@ -301,11 +301,11 @@ async function handleApprove(interaction, userId, env) {
   }
 
   const requestId = getStringOption(interaction.data?.options, 'requestid');
-  if (!requestId) return interactionResponse('requestId が必要です。', true);
+  if (!requestId) return interactionResponse('requestId が必要だよ', true);
 
   const req = await env.DB.prepare('SELECT * FROM requests WHERE id = ?').bind(requestId).first();
-  if (!req) return interactionResponse('requestが見つかりません。', true);
-  if (req.status !== 'pending') return interactionResponse('既に処理済みのrequestです。', true);
+  if (!req) return interactionResponse('requestが見つからないよ', true);
+  if (req.status !== 'pending') return interactionResponse('既に処理済みのrequestだよ。', true);
 
   const data = safeJsonParse(req.data, {});
 
@@ -372,7 +372,7 @@ async function handleApprove(interaction, userId, env) {
   }
 
   await env.DB.prepare("UPDATE requests SET status = 'approved' WHERE id = ?").bind(requestId).run();
-  return interactionResponse(`request ${requestId} を承認しました。`);
+  return interactionResponse(`request ${requestId} を承認したよ♪`);
 }
 
 async function handleReject(interaction, userId, env) {
@@ -388,10 +388,10 @@ async function handleReject(interaction, userId, env) {
     .run();
 
   if ((result.meta?.changes ?? 0) === 0) {
-    return interactionResponse('pending request が見つかりません。', true);
+    return interactionResponse('pending request が見つからないよ～', true);
   }
 
-  return interactionResponse(`request ${requestId} を却下しました。`);
+  return interactionResponse(`ごめんね。request ${requestId} を却下したよ。`);
 }
 
 async function handleRanking(env) {
@@ -436,7 +436,7 @@ async function handleAdd(interaction, userId, env) {
   const targetUser = interaction.data?.resolved?.users?.[targetId];
   const targetName = targetUser?.global_name ?? targetUser?.username ?? targetId;
   return interactionResponse(
-    `${targetName} に ${formatPoint(delta)}pt を反映しました。現在pt: **${formatPoint(updated?.point ?? 0)}**`
+    `${targetName} に ${formatPoint(delta)}pt を反映したよ！現在のポイントは **${formatPoint(updated?.point ?? 0)}**pt:だよ！`
   );
 }
 
