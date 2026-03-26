@@ -350,20 +350,6 @@ function isAdmin(interaction, env) {
   return roles.includes(env.ADMIN_ROLE_ID);
 }
 
-async function ensureUser(userId, db, userName = null) {
-  await db.prepare(
-    `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier, user_name)
-     VALUES (?, 0, 0, 0, 0, COALESCE(?, ''))
-     ON CONFLICT(user_id) DO NOTHING`
-  )
-    .bind(userId, userName)
-    .run();
-
-  if (userName && userName.trim()) {
-    await db.prepare('UPDATE users SET user_name = ? WHERE user_id = ?').bind(userName.trim(), userId).run();
-  }
-}
-
 async function logAction(db, userId, action, value) {
   await db.prepare('INSERT INTO logs (user_id, action, value, created_at) VALUES (?, ?, ?, ?)')
     .bind(userId, action, value, Date.now())
