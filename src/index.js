@@ -216,27 +216,11 @@ async function handleAdd(interaction, userId, env) {
 }
 
 
-async function ensureUser(userId, db, userName = null) {
+async function ensureUsersTableColumns(db) {
   try {
-    await db.prepare(
-      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier, user_name)
-       VALUES (?, 0, 0, 0, 0, COALESCE(?, ''))
-       ON CONFLICT(user_id) DO NOTHING`
-    )
-      .bind(userId, userName)
-      .run();
-
-    if (userName && userName.trim()) {
-      await db.prepare('UPDATE users SET user_name = ? WHERE user_id = ?').bind(userName.trim(), userId).run();
-    }
+    await db.prepare("ALTER TABLE users ADD COLUMN user_name TEXT DEFAULT ''").run();
   } catch {
-    await db.prepare(
-      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier)
-       VALUES (?, 0, 0, 0, 0)
-       ON CONFLICT(user_id) DO NOTHING`
-    )
-      .bind(userId)
-      .run();
+    // already exists
   }
 }
 
@@ -348,6 +332,30 @@ function safeJsonParse(value, fallback) {
 function isAdmin(interaction, env) {
   const roles = interaction.member?.roles ?? [];
   return roles.includes(env.ADMIN_ROLE_ID);
+}
+
+async function ensureUser(userId, db, userName = null) {
+  try {
+    await db.prepare(
+      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier, user_name)
+       VALUES (?, 0, 0, 0, 0, COALESCE(?, ''))
+       ON CONFLICT(user_id) DO NOTHING`
+    )
+      .bind(userId, userName)
+      .run();
+
+    if (userName && userName.trim()) {
+      await db.prepare('UPDATE users SET user_name = ? WHERE user_id = ?').bind(userName.trim(), userId).run();
+    }
+  } catch {
+    await db.prepare(
+      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier)
+       VALUES (?, 0, 0, 0, 0)
+       ON CONFLICT(user_id) DO NOTHING`
+    )
+      .bind(userId)
+      .run();
+  }
 }
 
 async function logAction(db, userId, action, value) {
