@@ -64,7 +64,7 @@ export default {
       return await routeCommand(interaction, env);
     } catch (error) {
       console.error(error);
-      return interactionResponse('内部エラーが発生しました。', true);
+      return interactionResponse('内部が壊れてるかも...りむのんに連絡お願い～', true);
     }
   },
 };
@@ -103,7 +103,7 @@ async function handlePoint(interaction, userId, env) {
   await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
   const displayName = getInteractionDisplayName(interaction, userId);
-  return interactionResponse(`${displayName} くんの現在のポイントは... **${formatPoint(row?.point ?? 0)}**ptだよ!`);
+  return interactionResponse(`${displayName} の現在のポイントは... **${formatPoint(row?.point ?? 0)}**ptだよ!`);
 }
 
 async function handleSubmit(interaction, userId, env) {
@@ -226,9 +226,21 @@ async function handleStartBattle(interaction, userId, env) {
 
   await logAction(env.DB, userId, 'battle_bet', amount);
 
+  // ★ ここからポイント引き落とし処理 ★
+  if (nextStatus === 'active') {
+    const players = [battle.player_a, battle.player_b];
+    const bets = [betA, betB];
+    for (let i = 0; i < 2; i++) {
+      await env.DB.prepare(
+        'UPDATE users SET point = point - ? WHERE user_id = ?'
+      ).bind(bets[i], players[i]).run();
+    }
+  }
+  // ★ ポイント引き落とし処理ここまで ★
+
   return interactionResponse(
     nextStatus === 'active'
-      ? `ベット確定するね♪ battleId: ${battle.id} はいつでも開始できるよ！`
+      ? `ベット確定するね♪  二人の掛けた金額は...${betA}と${betB}だよ！合計は${betA + betB} battleId: ${battle.id}`
       : `ベット受付するね♪ 相手の入力待ちだよ～！battleId: ${battle.id}`
   );
 }
@@ -239,6 +251,7 @@ async function handleResult(interaction, userId, env) {
     return interactionResponse('result は win または lose を指定してね！', true);
   }
 
+  // 直近のアクティブなバトルを取得
   const battle = await env.DB.prepare(
     `SELECT * FROM battles
      WHERE status = 'active' AND (player_a = ? OR player_b = ?)
@@ -251,29 +264,38 @@ async function handleResult(interaction, userId, env) {
     return interactionResponse('まだ試合初めてないかも？', true);
   }
 
+  // 自分の結果を記録
   const currentResult = safeJsonParse(battle.result, {});
   currentResult[userId] = result;
 
-  await env.DB.prepare('UPDATE battles SET result = ? WHERE id = ?').bind(JSON.stringify(currentResult), battle.id).run();
+  await env.DB.prepare('UPDATE battles SET result = ? WHERE id = ?')
+    .bind(JSON.stringify(currentResult), battle.id)
+    .run();
 
   const aResult = currentResult[battle.player_a];
   const bResult = currentResult[battle.player_b];
 
   if (!aResult || !bResult) {
-    return interactionResponse('君の結果は記録したよ！。相手を待ってね！');
+    return interactionResponse('君の結果は記録したよ！相手を待ってね！');
   }
 
   if (aResult === bResult) {
     return interactionResponse('あれ？結果があわないぞ？りむのんを呼んで～💦', true);
   }
 
+  // 勝者と敗者を決定
   const winner = aResult === 'win' ? battle.player_a : battle.player_b;
   const loser = winner === battle.player_a ? battle.player_b : battle.player_a;
+
+  // ベット合計から勝者70％、敗者30％を計算
+  const totalBet = battle.bet_a + battle.bet_b;
+  const winnerPoint = Math.floor(totalBet * 0.7);
+  const loserPoint = totalBet - winnerPoint;
 
   const requestId = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
-     VALUES (?, 'resolve', ?, ?, 0, 'pending', ?)`
+     VALUES (?, 'resolve', ?, ?, ?, 'pending', ?)`
   )
     .bind(
       requestId,
@@ -284,17 +306,24 @@ async function handleResult(interaction, userId, env) {
         loser,
         betA: battle.bet_a,
         betB: battle.bet_b,
+        winnerPoint,
+        loserPoint,
         insuranceUsed: false,
       }),
+      winnerPoint, // calculated_point に勝者ポイントを入れる
       Date.now()
     )
     .run();
 
-  await env.DB.prepare("UPDATE battles SET status = 'awaiting_approval' WHERE id = ?").bind(battle.id).run();
+  // バトル状態を承認待ちに更新
+  await env.DB.prepare(
+    "UPDATE battles SET status = 'awaiting_approval' WHERE id = ?"
+  ).bind(battle.id).run();
 
-  return interactionResponse(`よーし結果を入力できたね。お疲れ様！ りむのんに認証してもらってね♪ requestId: ${requestId}`);
+  return interactionResponse(
+    `よーし結果を入力できたね。お疲れ様！ りむのんに認証してもらってね♪ requestId: ${requestId}`
+  );
 }
-
 async function handleApprove(interaction, userId, env) {
   if (!isAdmin(interaction, env)) {
     return interactionResponse('このコマンドは運営のみ使用できます。', true);
