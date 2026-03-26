@@ -125,6 +125,7 @@ async function handleSubmit(interaction, userId, env) {
   }
 
   const weekId = getCurrentWeekId();
+
   const duplicate = await env.DB.prepare(
     'SELECT id FROM score_submissions WHERE user_id = ? AND difficulty = ? AND week_id = ?'
   )
@@ -142,6 +143,11 @@ async function handleSubmit(interaction, userId, env) {
     `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
      VALUES (?, 'score', ?, ?, ?, 'pending', ?)`
   )
+    .bind(requestId, userId, JSON.stringify({ difficulty, achievements, options }), score, Date.now())
+    .run();
+
+  // ✅ これが必要
+  return interactionResponse(`申請を受け付けたよ！ID: ${requestId}`);
 }
 
 async function handleApprove(interaction, userId, env) {
