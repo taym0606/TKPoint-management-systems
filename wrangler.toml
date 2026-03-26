@@ -3,6 +3,6 @@ main = "src/index.js"
 compatibility_date = "2026-03-26"
 
 [[d1_databases]]
-binding = "tkpoint_db"
+binding = "tkpoint-db"
 database_name = "tkpoint-db"
 database_id = "b578a4a1-8e50-4822-9f4f-fe54b3ec4394"
