@@ -167,17 +167,46 @@ async function handleBattle(interaction, userId, env) {
   }
 
   await ensureUser(targetId, env.DB);
-  const now = Date.now();
 
+  // ★ ユーザーが進行中のバトルを持っていないかチェック ★
+  const existingBattle = await env.DB.prepare(
+    `SELECT * FROM battles
+     WHERE status IN ('pending', 'active', 'awaiting_approval')
+       AND (player_a = ? OR player_b = ?)
+     ORDER BY created_at DESC LIMIT 1`
+  ).bind(userId, userId).first();
+
+  if (existingBattle) {
+    return interactionResponse(
+      `まだ進行中の対戦があるよ！battleId: ${existingBattle.id} を終えてから新しい対戦を作ってね♪`,
+      true
+    );
+  }
+
+  // 対戦相手も同様にチェック
+  const targetBattle = await env.DB.prepare(
+    `SELECT * FROM battles
+     WHERE status IN ('pending', 'active', 'awaiting_approval')
+       AND (player_a = ? OR player_b = ?)
+     ORDER BY created_at DESC LIMIT 1`
+  ).bind(targetId, targetId).first();
+
+  if (targetBattle) {
+    return interactionResponse(
+      `選んだ相手 <@${targetId}> はまだ進行中の対戦があるよ！別の相手を選んでね♪`,
+      true
+    );
+  }
+
+  const now = Date.now();
   const battleId = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO battles (id, player_a, player_b, bet_a, bet_b, status, thread_id, result, created_at)
      VALUES (?, ?, ?, NULL, NULL, 'pending', '', '{}', ?)`
-  )
-    .bind(battleId, userId, targetId, now)
-    .run();
+  ).bind(battleId, userId, targetId, now).run();
 
   await logAction(env.DB, userId, 'battle_create', 0);
+
   return interactionResponse(`<@${targetId}>との対戦を作成したよ！頑張ろう！ battleId: ${battleId}`);
 }
 
@@ -646,4 +675,33 @@ function jsonResponse(payload, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=UTF-8' },
   });
+}
+
+async function handleRejectBattle(interaction, userId, env) {
+  await ensureUser(userId, env.DB);
+
+  // 進行中のバトルを取得（pending, active, awaiting_approval）
+  const battle = await env.DB.prepare(
+    `SELECT * FROM battles
+     WHERE status IN ('pending', 'active', 'awaiting_approval')
+       AND (player_a = ? OR player_b = ?)
+     ORDER BY created_at DESC LIMIT 1`
+  ).bind(userId, userId).first();
+
+  if (!battle) {
+    return interactionResponse('拒否できる進行中のバトルがないよ！', true);
+  }
+
+  const opponent = battle.player_a === userId ? battle.player_b : battle.player_a;
+
+  // バトルを拒否済みにしてキャンセル
+  await env.DB.prepare(
+    `UPDATE battles SET status = 'rejected' WHERE id = ?`
+  ).bind(battle.id).run();
+
+  await logAction(env.DB, userId, 'battle_reject', 0);
+
+  return interactionResponse(
+    `進行中のバトルを拒否したよ！ <@${opponent}> もこれで新しく /battle が打てるようになったよ。 battleId: ${battle.id}`
+  );
 }

@@ -1,4 +1,8 @@
 [
+{
+    "name": "battlereject",
+    "description": "対戦を拒否できるよ！"
+  },
   {
     "name": "pt",
     "description": "現在のポイントを表示"
