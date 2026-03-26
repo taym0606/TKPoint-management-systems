@@ -101,10 +101,46 @@ async function routeCommand(interaction, env) {
   }
 }
 
-async function handlePoint(userId, env) {
+async function handlePoint(interaction, userId, env) {
   await ensureUser(userId, env.DB);
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
-  return interactionResponse(`<@${userId}> の現在pt: **${formatPoint(row?.point ?? 0)}**`);
+  const displayName =
+    interaction.member?.nick ??
+    interaction.member?.user?.global_name ??
+    interaction.member?.user?.username ??
+    interaction.user?.global_name ??
+    interaction.user?.username ??
+    userId;
+  return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
+}
+
+async function handleAdd(interaction, userId, env) {
+  if (!isAdmin(interaction, env)) {
+    return interactionResponse('このコマンドは運営のみ使用できます。', true);
+  }
+
+  const targetId = getUserOption(interaction.data?.options, 'player');
+  const delta = getNumberOption(interaction.data?.options, 'point');
+
+  if (!targetId) {
+    return interactionResponse('player を指定してください。', true);
+  }
+
+  if (!Number.isFinite(delta) || delta === 0) {
+    return interactionResponse('point は 0 以外の数値を指定してください。', true);
+  }
+
+  await ensureUser(targetId, env.DB);
+  await env.DB.prepare('UPDATE users SET point = point + ? WHERE user_id = ?').bind(delta, targetId).run();
+
+  const updated = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(targetId).first();
+  await logAction(env.DB, userId, 'admin_add_point', delta);
+
+  const targetUser = interaction.data?.resolved?.users?.[targetId];
+  const targetName = targetUser?.global_name ?? targetUser?.username ?? targetId;
+  return interactionResponse(
+    `${targetName} に ${formatPoint(delta)}pt を反映しました。現在pt: **${formatPoint(updated?.point ?? 0)}**`
+  );
 }
 
 async function handleSubmit(interaction, userId, env) {
@@ -398,7 +434,7 @@ async function handleReject(interaction, userId, env) {
 async function handleRanking(env) {
   const rows = await env.DB.prepare('SELECT user_id, point FROM users ORDER BY point DESC LIMIT 10').all();
   const list = (rows.results ?? [])
-    .map((row, idx) => `${idx + 1}. <@${row.user_id}> - ${formatPoint(row.point)}pt`)
+    .map((row, idx) => `${idx + 1}. ${row.user_id} - ${formatPoint(row.point)}pt`)
     .join('\n');
 
   return interactionResponse(list || 'ランキングデータがありません。');

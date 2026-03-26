@@ -114,17 +114,21 @@
     "name": "ranking",
     "description": "ランキング表示"
   },
-  {
-    "name": "convert",
-    "description": "サークルpt変換申請",
+   {
+    "name": "add",
+    "description": "ポイントを増減（運営）",
     "options": [
       {
+        "type": 6,
+        "name": "player",
+        "description": "対象プレイヤー",
+        "required": true
+      },
+      {
         "type": 10,
-        "name": "amount",
-        "description": "変換pt（1〜10）",
-        "required": true,
-        "min_value": 1,
-        "max_value": 10
+        "name": "point",
+        "description": "増減ポイント（負数で減算）",
+        "required": true
       }
     ]
   }
