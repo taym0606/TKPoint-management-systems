@@ -281,8 +281,8 @@ async function handleResult(interaction, userId, env) {
 
   // ベット合計から勝者70％、敗者30％を計算
   const totalBet = battle.bet_a + battle.bet_b;
-  const winnerPoint = Math.floor(totalBet * 0.7);
-  const loserPoint = totalBet - winnerPoint;
+  const winnerPoint = battle.bet_a + Math.floor(battle.bet_b * 0.8);
+  const loserPoint = Math.floor(battle.bet_b * 0.2);
 
   const requestId = crypto.randomUUID();
   await env.DB.prepare(
