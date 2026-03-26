@@ -194,9 +194,6 @@ async function handleStartBattle(interaction, userId, env) {
   if ((me?.point ?? 0) < amount) {
     return interactionResponse('そんなにポイント持ってないよ～！', true);
   }
-  if (now - (me?.last_battle_at ?? 0) < THREE_DAYS_MS) {
-    return interactionResponse('今はお休みの時間だにゃ～～', true);
-  }
 
   const battle = await env.DB.prepare(
     `SELECT * FROM battles
