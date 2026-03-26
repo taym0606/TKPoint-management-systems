@@ -251,9 +251,8 @@ async function fetchDiscordDisplayName(userId, env) {
     return userId;
   }
 }
-function calculateScorePoint({ difficulty, achievements, options }) {
+function calculateScorePoint({ achievements, options }) {
   const normalized = normalizeAchievements(achievements);
-  const hasAtLeastSSS = normalized.includes('SSS') || normalized.includes('SSS+');
 
   const basic = normalized.reduce((sum, key) => sum + (ACHIEVEMENT_POINTS[key] ?? 0), 0);
   const option = hasAtLeastSSS
