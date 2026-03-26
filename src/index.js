@@ -104,7 +104,7 @@ async function handlePoint(interaction, userId, env) {
   await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
   const displayName = getInteractionDisplayName(interaction, userId);
-  return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
+  return interactionResponse(`${displayName} の現在ptは: **${formatPoint(row?.point ?? 0)}**だよ♪`);
 }
 
 async function handleSubmit(interaction, userId, env) {
@@ -132,7 +132,7 @@ async function handleSubmit(interaction, userId, env) {
     .first();
 
   if (duplicate) {
-    return interactionResponse('この週の同難易度は既に承認済みです。', true);
+    return interactionResponse('この週の同難易度は既に承認済みだよ～', true);
   }
 
   const score = calculateScorePoint({ difficulty, achievements, options, multiplied });
@@ -147,26 +147,26 @@ async function handleSubmit(interaction, userId, env) {
 async function handleApprove(interaction, userId, env) {
 
   await env.DB.prepare("UPDATE requests SET status = 'approved' WHERE id = ?").bind(requestId).run();
-  return interactionResponse(`request ${requestId} を承認しました。`);
+  return interactionResponse(`request ${requestId} を承認したよ～`);
 }
 
 async function handleReject(interaction, userId, env) {
   if (!isAdmin(interaction, env)) {
-    return interactionResponse('このコマンドは運営のみ使用できます。', true);
+    return interactionResponse('このコマンド使えるのは運営だけだよ！', true);
   }
 
   const requestId = getStringOption(interaction.data?.options, 'requestid');
-  if (!requestId) return interactionResponse('requestId が必要です。', true);
+  if (!requestId) return interactionResponse('requestId が必要だよ？', true);
 
   const result = await env.DB.prepare("UPDATE requests SET status = 'rejected' WHERE id = ? AND status = 'pending'")
     .bind(requestId)
     .run();
 
   if ((result.meta?.changes ?? 0) === 0) {
-    return interactionResponse('pending request が見つかりません。', true);
+    return interactionResponse('pending request が見つからなかったな...', true);
   }
 
-  return interactionResponse(`request ${requestId} を却下しました。`);
+  return interactionResponse(`ごめんね...request ${requestId} を却下したよ。`);
 }
 
 async function handleRanking(env) {
@@ -181,23 +181,23 @@ async function handleRanking(env) {
     })
   );
 
-  return interactionResponse(lines.join('\n') || 'ランキングデータがありません。');
+  return interactionResponse(lines.join('\n') || 'ランキングデータがないよー！');
 }
 
 async function handleAdd(interaction, userId, env) {
   if (!isAdmin(interaction, env)) {
-    return interactionResponse('このコマンドは運営のみ使用できます。', true);
+    return interactionResponse('このコマンドを使えるのは運営だけだよ！', true);
   }
 
   const targetId = getUserOption(interaction.data?.options, 'player');
   const delta = getNumberOption(interaction.data?.options, 'point');
 
   if (!targetId) {
-    return interactionResponse('player を指定してください。', true);
+    return interactionResponse('player を指定してね！', true);
   }
 
   if (!Number.isFinite(delta) || delta === 0) {
-    return interactionResponse('point は 0 以外の数値を指定してください。', true);
+    return interactionResponse('point は 0 以外の数値を指定してね！', true);
   }
 
   const targetResolved = interaction.data?.resolved?.users?.[targetId];
@@ -211,18 +211,35 @@ async function handleAdd(interaction, userId, env) {
   const targetUser = interaction.data?.resolved?.users?.[targetId];
   const targetName = targetUser?.global_name ?? targetUser?.username ?? targetId;
   return interactionResponse(
-    `${targetName} に ${formatPoint(delta)}pt を反映しました。現在pt: **${formatPoint(updated?.point ?? 0)}**`
+    `${targetName} に ${formatPoint(delta)}pt をあげたよ! 今のポイントはpt:**${formatPoint(updated?.point ?? 0)}だよ！**`
   );
 }
 
 
-async function ensureUsersTableColumns(db) {
+async function ensureUser(userId, db, userName = null) {
   try {
-    await db.prepare("ALTER TABLE users ADD COLUMN user_name TEXT DEFAULT ''").run();
+    await db.prepare(
+      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier, user_name)
+       VALUES (?, 0, 0, 0, 0, COALESCE(?, ''))
+       ON CONFLICT(user_id) DO NOTHING`
+    )
+      .bind(userId, userName)
+      .run();
+
+    if (userName && userName.trim()) {
+      await db.prepare('UPDATE users SET user_name = ? WHERE user_id = ?').bind(userName.trim(), userId).run();
+    }
   } catch {
-    // already exists
+    await db.prepare(
+      `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier)
+       VALUES (?, 0, 0, 0, 0)
+       ON CONFLICT(user_id) DO NOTHING`
+    )
+      .bind(userId)
+      .run();
   }
 }
+
 
 function getInteractionDisplayName(interaction, fallback = '') {
   return (
