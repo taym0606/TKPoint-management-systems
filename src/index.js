@@ -94,24 +94,17 @@ async function routeCommand(interaction, env) {
       return handleReject(interaction, userId, env);
     case 'ranking':
       return handleRanking(env);
-    case 'convert':
-      return handleConvert(interaction, userId, env);
+    case 'add':
+      return handleAdd(interaction, userId, env);
     default:
       return interactionResponse(`未対応コマンド: ${command}`, true);
   }
 }
 
-async function handlePoint(interaction, userId, env) {
+async function handlePoint(userId, env) {
   await ensureUser(userId, env.DB);
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
-  const displayName =
-    interaction.member?.nick ??
-    interaction.member?.user?.global_name ??
-    interaction.member?.user?.username ??
-    interaction.user?.global_name ??
-    interaction.user?.username ??
-    userId;
-  return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
+  return interactionResponse(`<@${userId}> の現在pt: **${formatPoint(row?.point ?? 0)}**`);
 }
 
 async function handleAdd(interaction, userId, env) {
@@ -433,48 +426,33 @@ async function handleReject(interaction, userId, env) {
 
 async function handleRanking(env) {
   const rows = await env.DB.prepare('SELECT user_id, point FROM users ORDER BY point DESC LIMIT 10').all();
-  const list = (rows.results ?? [])
-    .map((row, idx) => `${idx + 1}. ${row.user_id} - ${formatPoint(row.point)}pt`)
-    .join('\n');
+  const ranked = rows.results ?? [];
 
-  return interactionResponse(list || 'ランキングデータがありません。');
+    const lines = await Promise.all(
+      ranked.map(async (row, idx) => {
+        const name = await fetchDiscordDisplayName(row.user_id, env);
+        return `${idx + 1}. ${name} - ${formatPoint(row.point)}pt`;
+      })
+    );
+
+    return interactionResponse(lines.join('\n') || 'ランキングデータがありません。');
 }
 
-async function handleConvert(interaction, userId, env) {
-  await ensureUser(userId, env.DB);
-  const amount = getNumberOption(interaction.data?.options, 'amount');
-  if (!amount || amount <= 0) {
-    return interactionResponse('amount は 1 以上を指定してください。', true);
+async function fetchDiscordDisplayName(userId, env) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  if (!botToken) return userId;
+
+  try {
+    const res = await fetch(`https://discord.com/api/v10/users/${userId}`, {
+      headers: { Authorization: `Bot ${botToken}` },
+    });
+
+    if (!res.ok) return userId;
+    const user = await res.json();
+    return user.global_name || user.username || userId;
+  } catch {
+    return userId;
   }
-
-  if (amount > 10) {
-    return interactionResponse('1回の変換上限は10ptです。', true);
-  }
-
-  const monthStart = getMonthStartTimestamp();
-  const usedRow = await env.DB.prepare(
-    `SELECT COALESCE(SUM(value), 0) AS used
-     FROM logs
-     WHERE user_id = ? AND action = 'convert_request' AND created_at >= ?`
-  )
-    .bind(userId, monthStart)
-    .first();
-
-  const used = Number(usedRow?.used ?? 0);
-  if (used + amount > 10) {
-    return interactionResponse('月の変換上限（10pt）を超えています。', true);
-  }
-
-  const requestId = crypto.randomUUID();
-  await env.DB.prepare(
-    `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
-     VALUES (?, 'exchange', ?, ?, 0, 'pending', ?)`
-  )
-    .bind(requestId, userId, JSON.stringify({ cost: amount, circlePoint: amount * 1000 }), Date.now())
-    .run();
-
-  await logAction(env.DB, userId, 'convert_request', amount);
-  return interactionResponse(`変換申請を作成しました。requestId: ${requestId}（${amount}pt -> ${amount * 1000}サークルpt）`);
 }
 
 function calculateScorePoint({ difficulty, achievements, options }) {
@@ -522,7 +500,14 @@ function getBooleanOption(options = [], name) {
 
 function getArrayOption(options = [], name) {
   const v = options?.find((x) => x.name === name)?.value;
-  return Array.isArray(v) ? v : [];
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') {
+    return v
+      .split(/[、,]/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 function getUserOption(options = [], name) {
