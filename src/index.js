@@ -310,11 +310,6 @@ async function handleResult(interaction, userId, env) {
   const winner = aResult === 'win' ? battle.player_a : battle.player_b;
   const loser = winner === battle.player_a ? battle.player_b : battle.player_a;
 
-  // ベット合計から勝者70％、敗者30％を計算
-  const totalBet = battle.bet_a + battle.bet_b;
-  const winnerPoint = totalBet;
-  const loserPoint = 0;
-
   const requestId = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
@@ -362,6 +357,7 @@ async function handleApprove(interaction, userId, env) {
   const data = safeJsonParse(req.data, {});
 
   if (req.type === 'score') {
+    // スコア承認処理
     await ensureUser(req.user_id, env.DB);
     await env.DB.prepare('UPDATE users SET point = point + ? WHERE user_id = ?')
       .bind(req.calculated_point, req.user_id)
@@ -374,56 +370,71 @@ async function handleApprove(interaction, userId, env) {
       .run();
 
     await logAction(env.DB, req.user_id, 'approve_score', req.calculated_point);
+
   } else if (req.type === 'resolve') {
+    // バトル承認処理
     const winner = data.winner;
     const loser = data.loser;
+
     const battle = await env.DB.prepare('SELECT player_a, player_b, bet_a, bet_b FROM battles WHERE id = ?')
       .bind(data.battleId)
       .first();
-    if (!battle) {
-      return interactionResponse('関連battleが見つかりません。', true);
-    }
+    if (!battle) return interactionResponse('関連battleが見つかりません。', true);
+
+    // 掛け金を数値化
     const loserBet = Number(loser === battle.player_a ? battle.bet_a : battle.bet_b);
-    const winnerGainSource = Number(winner === battle.player_a ? battle.bet_b : battle.bet_a);
+    const winnerBet = Number(winner === battle.player_a ? battle.bet_a : battle.bet_b);
 
-    const gain = Number((winnerGainSource ?? 0) * 0.7);
-    const loss = Number((loserBet ?? 0) * 0.7);
-    let refund = Number((loserBet ?? 0) * 0.3);
+    // 勝者の獲得金額 = 自分の掛け金 + 負けた人の掛け金の80%
+    const gain = winnerBet + loserBet * 0.8;
 
-    if (data.insuranceUsed) {
-      refund += Number((loserBet ?? 0) * 0.2);
-      await env.DB.prepare('UPDATE users SET insurance_used_at = ? WHERE user_id = ?').bind(Date.now(), loser).run();
-    }
-
-    const loserNet = -loss + refund;
+    // 敗者の損失 = 自分の掛け金の80%（残り20%は保持）
+    const loss = loserBet * 0.2;
+    const loserNet = -loss; // 保険なしなのでシンプル
 
     await ensureUser(winner, env.DB);
     await ensureUser(loser, env.DB);
 
+    // 勝者ポイント更新
     await env.DB.prepare('UPDATE users SET point = point + ?, last_battle_at = ? WHERE user_id = ?')
       .bind(gain, Date.now(), winner)
       .run();
 
+    // 敗者ポイント更新
     await env.DB.prepare(
       'UPDATE users SET point = point + ?, bonus_multiplier = bonus_multiplier + 0.1, last_battle_at = ? WHERE user_id = ?'
     )
       .bind(loserNet, Date.now(), loser)
       .run();
 
-    await env.DB.prepare("UPDATE battles SET status = 'resolved' WHERE id = ?").bind(data.battleId).run();
+    // バトルステータス更新
+    await env.DB.prepare("UPDATE battles SET status = 'resolved' WHERE id = ?")
+      .bind(data.battleId)
+      .run();
 
+    // ログ記録
     await logAction(env.DB, winner, 'approve_battle_win', gain);
     await logAction(env.DB, loser, 'approve_battle_lose', loserNet);
+
   } else if (req.type === 'exchange') {
+    // ポイント交換処理
     await ensureUser(req.user_id, env.DB);
-    const cost = Number(data.cost ?? 0);
-    await env.DB.prepare('UPDATE users SET point = point - ? WHERE user_id = ?').bind(cost, req.user_id).run();
+    const cost = Number(data?.cost ?? 0);
+    await env.DB.prepare('UPDATE users SET point = point - ? WHERE user_id = ?')
+      .bind(cost, req.user_id)
+      .run();
+
     await logAction(env.DB, req.user_id, 'approve_exchange', -cost);
+
   } else {
     return interactionResponse(`未知の request type: ${req.type}`, true);
   }
 
-  await env.DB.prepare("UPDATE requests SET status = 'approved' WHERE id = ?").bind(requestId).run();
+  // request を承認済みにする
+  await env.DB.prepare("UPDATE requests SET status = 'approved' WHERE id = ?")
+    .bind(requestId)
+    .run();
+
   return interactionResponse(`request ${requestId} を承認したよ♪`);
 }
 
