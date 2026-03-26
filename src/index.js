@@ -251,13 +251,18 @@ async function fetchDiscordDisplayName(userId, env) {
     return userId;
   }
 }
-function calculateScorePoint({ achievements, options }) {
+function calculateScorePoint({ difficulty, achievements, options }) {
   const normalized = normalizeAchievements(achievements);
+  const hasAtLeastSSS = normalized.includes('SSS') || normalized.includes('SSS+');
 
   const basic = normalized.reduce((sum, key) => sum + (ACHIEVEMENT_POINTS[key] ?? 0), 0);
   const option = hasAtLeastSSS
     ? options.reduce((sum, key) => sum + (OPTION_POINTS[key] ?? 0), 0)
     : 0;
+
+  const multiplier = DIFFICULTY_MULTIPLIER[difficulty] ?? 1;
+
+  return (basic + option) * multiplier;
 }
 
 function getCurrentWeekId() {
