@@ -178,7 +178,7 @@ async function handleBattle(interaction, userId, env) {
     .run();
 
   await logAction(env.DB, userId, 'battle_create', 0);
-  return interactionResponse(`対戦を作成したよ！頑張ろう！  battleId: ${battleId}`);
+  return interactionResponse(`<@${targetId}>との対戦を作成したよ！頑張ろう！ battleId: ${battleId}`);
 }
 
 async function handleStartBattle(interaction, userId, env) {
@@ -232,8 +232,8 @@ async function handleStartBattle(interaction, userId, env) {
 
   return interactionResponse(
     nextStatus === 'active'
-      ? `ベット確定するね♪  二人の掛けた金額は...${betA}と${betB}だよ！合計は${betA + betB} battleId: ${battle.id}`
-      : `ベット受付するね♪ 相手の入力待ちだよ～！battleId: ${battle.id}`
+      ? `ベット確定するね♪  二人の掛けた金額は...${betA}と${betB}だよ！合計は${betA + betB}`
+      : `ベット受付するね♪ 相手の入力待ちだよ～！`
   );
 }
 
