@@ -43,13 +43,7 @@ export default {
     const signature = request.headers.get('x-signature-ed25519');
     const timestamp = request.headers.get('x-signature-timestamp');
 
-    console.log('[debug] method=', request.method);
-    console.log('[debug] hasSignature=', Boolean(signature), 'hasTimestamp=', Boolean(timestamp));
-    console.log('[debug] bodyLength=', body.length);
-
     const isValid = await verifyDiscordSignature(body, signature, timestamp, env.DISCORD_PUBLIC_KEY);
-    console.log('[debug] signatureValid=', isValid);
-
     if (!isValid) {
       return jsonResponse({ error: 'Invalid request signature' }, 401);
     }
@@ -63,7 +57,8 @@ export default {
     if (interaction.type !== DISCORD_INTERACTION_TYPE.APPLICATION_COMMAND) {
       return interactionResponse('Unsupported interaction type', true);
     }
-    await ensureUsersTableColumns(env.DB);
+
+  await ensureUsersTableColumns(env.DB);
 
     try {
       return await routeCommand(interaction, env);
@@ -79,10 +74,9 @@ async function routeCommand(interaction, env) {
   const userId = interaction.member?.user?.id ?? interaction.user?.id;
   const userName = getInteractionDisplayName(interaction, userId);
   await ensureUser(userId, env.DB, userName);
-
   switch (command) {
     case 'pt':
-      return handlePoint(userId, env);
+      return handlePoint(interaction, userId, env);
     case 'submit':
       return handleSubmit(interaction, userId, env);
     case 'battle':
@@ -104,39 +98,11 @@ async function routeCommand(interaction, env) {
   }
 }
 
-async function handlePoint(userId, env) {
-  await ensureUser(userId, env.DB);
+async function handlePoint(interaction, userId, env) {
+   await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
-  return interactionResponse(`<@${userId}> の現在pt: **${formatPoint(row?.point ?? 0)}**`);
-}
-
-async function handleAdd(interaction, userId, env) {
-  if (!isAdmin(interaction, env)) {
-    return interactionResponse('このコマンドは運営のみ使用できます。', true);
-  }
-
-  const targetId = getUserOption(interaction.data?.options, 'player');
-  const delta = getNumberOption(interaction.data?.options, 'point');
-
-  if (!targetId) {
-    return interactionResponse('player を指定してください。', true);
-  }
-
-  if (!Number.isFinite(delta) || delta === 0) {
-    return interactionResponse('point は 0 以外の数値を指定してください。', true);
-  }
-
-  await ensureUser(targetId, env.DB);
-  await env.DB.prepare('UPDATE users SET point = point + ? WHERE user_id = ?').bind(delta, targetId).run();
-
-  const updated = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(targetId).first();
-  await logAction(env.DB, userId, 'admin_add_point', delta);
-
-  const targetUser = interaction.data?.resolved?.users?.[targetId];
-  const targetName = targetUser?.global_name ?? targetUser?.username ?? targetId;
-  return interactionResponse(
-    `${targetName} に ${formatPoint(delta)}pt を反映しました。現在pt: **${formatPoint(updated?.point ?? 0)}**`
-  );
+  const displayName = getInteractionDisplayName(interaction, userId);
+  return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
 }
 
 async function handleSubmit(interaction, userId, env) {
@@ -428,18 +394,51 @@ async function handleReject(interaction, userId, env) {
 }
 
 async function handleRanking(env) {
-  const rows = await env.DB.prepare('SELECT user_id, point FROM users ORDER BY point DESC LIMIT 10').all();
+  const rows = await env.DB.prepare('SELECT user_id, point, user_name FROM users ORDER BY point DESC LIMIT 10').all();
   const ranked = rows.results ?? [];
 
-    const lines = await Promise.all(
-      ranked.map(async (row, idx) => {
-        const name = await fetchDiscordDisplayName(row.user_id, env);
-        return `${idx + 1}. ${name} - ${formatPoint(row.point)}pt`;
-      })
-    );
+  const lines = await Promise.all(
+    ranked.map(async (row, idx) => {
+      const dbName = String(row.user_name ?? '').trim();
+      const name = dbName || (await fetchDiscordDisplayName(row.user_id, env));
+      return `${idx + 1}. ${name} - ${formatPoint(row.point)}pt`;
+    })
+  );
 
-    return interactionResponse(lines.join('\n') || 'ランキングデータがありません。');
+  return interactionResponse(lines.join('\n') || 'ランキングデータがありません。');
 }
+
+async function handleAdd(interaction, userId, env) {
+  if (!isAdmin(interaction, env)) {
+    return interactionResponse('このコマンドは運営のみ使用できます。', true);
+  }
+
+  const targetId = getUserOption(interaction.data?.options, 'player');
+  const delta = getNumberOption(interaction.data?.options, 'point');
+
+  if (!targetId) {
+    return interactionResponse('player を指定してください。', true);
+  }
+
+  if (!Number.isFinite(delta) || delta === 0) {
+    return interactionResponse('point は 0 以外の数値を指定してください。', true);
+  }
+
+  const targetResolved = interaction.data?.resolved?.users?.[targetId];
+  const targetResolvedName = targetResolved?.global_name ?? targetResolved?.username ?? null;
+  await ensureUser(targetId, env.DB, targetResolvedName);
+  await env.DB.prepare('UPDATE users SET point = point + ? WHERE user_id = ?').bind(delta, targetId).run();
+
+  const updated = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(targetId).first();
+  await logAction(env.DB, userId, 'admin_add_point', delta);
+
+  const targetUser = interaction.data?.resolved?.users?.[targetId];
+  const targetName = targetUser?.global_name ?? targetUser?.username ?? targetId;
+  return interactionResponse(
+    `${targetName} に ${formatPoint(delta)}pt を反映しました。現在pt: **${formatPoint(updated?.point ?? 0)}**`
+  );
+}
+
 
 async function fetchDiscordDisplayName(userId, env) {
   const botToken = env.DISCORD_BOT_TOKEN;
@@ -457,7 +456,6 @@ async function fetchDiscordDisplayName(userId, env) {
     return userId;
   }
 }
-
 function calculateScorePoint({ difficulty, achievements, options }) {
   const normalized = normalizeAchievements(achievements);
   const hasAtLeastSSS = normalized.includes('SSS') || normalized.includes('SSS+');
@@ -530,14 +528,18 @@ function isAdmin(interaction, env) {
   return roles.includes(env.ADMIN_ROLE_ID);
 }
 
-async function ensureUser(userId, db) {
+async function ensureUser(userId, db, userName = null) {
   await db.prepare(
-    `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier)
-     VALUES (?, 0, 0, 0, 0)
+    `INSERT INTO users (user_id, point, last_battle_at, insurance_used_at, bonus_multiplier, user_name)
+     VALUES (?, 0, 0, 0, 0, COALESCE(?, ''))
      ON CONFLICT(user_id) DO NOTHING`
   )
-    .bind(userId)
+    .bind(userId, userName)
     .run();
+
+  if (userName && userName.trim()) {
+    await db.prepare('UPDATE users SET user_name = ? WHERE user_id = ?').bind(userName.trim(), userId).run();
+  }
 }
 
 async function logAction(db, userId, action, value) {
@@ -551,41 +553,15 @@ function formatPoint(value) {
 }
 
 async function verifyDiscordSignature(body, signature, timestamp, publicKeyHex) {
-  try {
-    if (!signature || !timestamp || !publicKeyHex) {
-      console.log('[debug] missing fields', {
-        signature: Boolean(signature),
-        timestamp: Boolean(timestamp),
-        publicKey: Boolean(publicKeyHex),
-      });
-      return false;
-    }
+  if (!signature || !timestamp || !publicKeyHex) return false;
+  const encoder = new TextEncoder();
+  const message = encoder.encode(timestamp + body);
 
-    const encoder = new TextEncoder();
-    const message = encoder.encode(timestamp + body);
+  const signatureBytes = hexToBytes(signature);
+  const keyBytes = hexToBytes(publicKeyHex);
 
-    const signatureBytes = hexToBytes(signature);
-    const keyBytes = hexToBytes(publicKeyHex);
-
-    console.log('[debug] bytes', {
-      signatureBytes: signatureBytes.length,
-      keyBytes: keyBytes.length,
-    });
-
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      keyBytes,
-      { name: 'Ed25519' },
-      false,
-      ['verify']
-    );
-
-    const ok = await crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, message);
-    return ok;
-  } catch (e) {
-    console.log('[debug] verifyError=', String(e));
-    return false;
-  }
+  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'Ed25519' }, false, ['verify']);
+  return crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, message);
 }
 
 function hexToBytes(hex) {
@@ -612,4 +588,24 @@ function jsonResponse(payload, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=UTF-8' },
   });
+}
+
+
+async function ensureUsersTableColumns(db) {
+  try {
+    await db.prepare("ALTER TABLE users ADD COLUMN user_name TEXT DEFAULT ''").run();
+  } catch {
+    // already exists
+  }
+}
+
+function getInteractionDisplayName(interaction, fallback = '') {
+  return (
+    interaction.member?.nick ??
+    interaction.member?.user?.global_name ??
+    interaction.member?.user?.username ??
+    interaction.user?.global_name ??
+    interaction.user?.username ??
+    fallback
+  );
 }
