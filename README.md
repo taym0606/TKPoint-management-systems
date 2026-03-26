@@ -15,7 +15,7 @@ wrangler d1 execute tkpoint-db --file=schema.sql
 4. シークレット設定
 
 ```bash
-wrangler secret put DISCORD_PUBLIC_KEY
+wrangler secret put DISCORD_PUBLIC_KEY 303c432497ac86bb23828d4d2a3f71b708cefcfc7d329e01bf4f955400b7de8e
 wrangler secret put ADMIN_ROLE_ID
 ```
 

@@ -1,0 +1,131 @@
+[
+  {
+    "name": "pt",
+    "description": "現在のポイントを表示"
+  },
+  {
+    "name": "submit",
+    "description": "スコア申請",
+    "options": [
+      {
+        "type": 1,
+        "name": "score",
+        "description": "スコア申請を作成",
+        "options": [
+          {
+            "type": 3,
+            "name": "difficulty",
+            "description": "難易度",
+            "required": true,
+            "choices": [
+              { "name": "14+", "value": "14+" },
+              { "name": "14", "value": "14" },
+              { "name": "13+", "value": "13+" }
+            ]
+          },
+          {
+            "type": 3,
+            "name": "achievements",
+            "description": "例: SSS+,FC (カンマ区切り)",
+            "required": false
+          },
+          {
+            "type": 3,
+            "name": "options",
+            "description": "例: 全反転,明るいバー (カンマ区切り)",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "multiplied",
+            "description": "週倍率対象か",
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "battle",
+    "description": "対戦を作成",
+    "options": [
+      {
+        "type": 6,
+        "name": "user",
+        "description": "対戦相手",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "startbattle",
+    "description": "対戦ベットを開始",
+    "options": [
+      {
+        "type": 10,
+        "name": "amount",
+        "description": "ベットpt",
+        "required": true,
+        "min_value": 0.01
+      }
+    ]
+  },
+  {
+    "name": "result",
+    "description": "対戦結果を申告",
+    "options": [
+      {
+        "type": 3,
+        "name": "result",
+        "description": "勝敗",
+        "required": true,
+        "choices": [
+          { "name": "win", "value": "win" },
+          { "name": "lose", "value": "lose" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "approve",
+    "description": "requestを承認（運営）",
+    "options": [
+      {
+        "type": 3,
+        "name": "requestid",
+        "description": "承認するrequest ID",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "reject",
+    "description": "requestを却下（運営）",
+    "options": [
+      {
+        "type": 3,
+        "name": "requestid",
+        "description": "却下するrequest ID",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "ranking",
+    "description": "ランキング表示"
+  },
+  {
+    "name": "convert",
+    "description": "サークルpt変換申請",
+    "options": [
+      {
+        "type": 10,
+        "name": "amount",
+        "description": "変換pt（1〜10）",
+        "required": true,
+        "min_value": 1,
+        "max_value": 10
+      }
+    ]
+  }
+]

@@ -43,7 +43,13 @@ export default {
     const signature = request.headers.get('x-signature-ed25519');
     const timestamp = request.headers.get('x-signature-timestamp');
 
+    console.log('[debug] method=', request.method);
+    console.log('[debug] hasSignature=', Boolean(signature), 'hasTimestamp=', Boolean(timestamp));
+    console.log('[debug] bodyLength=', body.length);
+
     const isValid = await verifyDiscordSignature(body, signature, timestamp, env.DISCORD_PUBLIC_KEY);
+    console.log('[debug] signatureValid=', isValid);
+
     if (!isValid) {
       return jsonResponse({ error: 'Invalid request signature' }, 401);
     }
@@ -521,15 +527,41 @@ function formatPoint(value) {
 }
 
 async function verifyDiscordSignature(body, signature, timestamp, publicKeyHex) {
-  if (!signature || !timestamp || !publicKeyHex) return false;
-  const encoder = new TextEncoder();
-  const message = encoder.encode(timestamp + body);
+  try {
+    if (!signature || !timestamp || !publicKeyHex) {
+      console.log('[debug] missing fields', {
+        signature: Boolean(signature),
+        timestamp: Boolean(timestamp),
+        publicKey: Boolean(publicKeyHex),
+      });
+      return false;
+    }
 
-  const signatureBytes = hexToBytes(signature);
-  const keyBytes = hexToBytes(publicKeyHex);
+    const encoder = new TextEncoder();
+    const message = encoder.encode(timestamp + body);
 
-  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'Ed25519' }, false, ['verify']);
-  return crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, message);
+    const signatureBytes = hexToBytes(signature);
+    const keyBytes = hexToBytes(publicKeyHex);
+
+    console.log('[debug] bytes', {
+      signatureBytes: signatureBytes.length,
+      keyBytes: keyBytes.length,
+    });
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'Ed25519' },
+      false,
+      ['verify']
+    );
+
+    const ok = await crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, message);
+    return ok;
+  } catch (e) {
+    console.log('[debug] verifyError=', String(e));
+    return false;
+  }
 }
 
 function hexToBytes(hex) {
