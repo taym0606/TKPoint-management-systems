@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
   user_id TEXT PRIMARY KEY,
+  user_name TEXT DEFAULT ''
   point REAL DEFAULT 0,
   last_battle_at INTEGER DEFAULT 0,
   insurance_used_at INTEGER DEFAULT 0,

@@ -43,3 +43,7 @@ wrangler deploy
 - 申請は `requests` に `pending` で積み、管理者が承認
 - 対戦クールタイムは 3 日
 - 変換は月 10pt まで
+
+$env:APP_ID
+$env:GUILD_ID
+$env:BOT_TOKEN

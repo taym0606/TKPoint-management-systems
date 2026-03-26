@@ -24,10 +24,46 @@
               { "name": "13+", "value": "13+" }
             ]
           },
+{
+            "type": 5,
+            "name": "sss",
+            "description": "SSS",
+            "required": false
+          },
           {
-            "type": 3,
-            "name": "achievements",
-            "description": "例: SSS+,FC (カンマ区切り)",
+            "type": 5,
+            "name": "sss_plus",
+            "description": "SSS+",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "fc",
+            "description": "FC",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "fc_plus",
+            "description": "FC+",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "ap",
+            "description": "AP",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "ap_plus",
+            "description": "AP+",
+            "required": false
+          },
+          {
+            "type": 5,
+            "name": "star5",
+            "description": "星5",
             "required": false
           },
           {
