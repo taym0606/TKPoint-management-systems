@@ -90,6 +90,8 @@ async function routeCommand(interaction, env) {
       return handleApprove(interaction, userId, env);
     case 'reject':
       return handleReject(interaction, userId, env);
+    case 'battlereject':
+      return handleRejectBattle(interaction, userId, env);
     case 'ranking':
       return handleRanking(env);
     case 'add':
