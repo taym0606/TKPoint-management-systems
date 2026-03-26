@@ -142,6 +142,8 @@ async function handleSubmit(interaction, userId, env) {
     `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
      VALUES (?, 'score', ?, ?, ?, 'pending', ?)`
   )
+}
+
 async function handleApprove(interaction, userId, env) {
 
   await env.DB.prepare("UPDATE requests SET status = 'approved' WHERE id = ?").bind(requestId).run();
@@ -257,6 +259,7 @@ function calculateScorePoint({ difficulty, achievements, options }) {
   const option = hasAtLeastSSS
     ? options.reduce((sum, key) => sum + (OPTION_POINTS[key] ?? 0), 0)
     : 0;
+}
 
 function normalizeAchievements(list) {
 function getCurrentWeekId() {
@@ -264,6 +267,7 @@ function getCurrentWeekId() {
   const start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const days = Math.floor((now - start) / 86400000);
   return Number(`${now.getUTCFullYear()}${String(Math.ceil((days + start.getUTCDay() + 1) / 7)).padStart(2, '0')}`);
+}
 }
 
 function getMonthStartTimestamp() {
@@ -390,4 +394,4 @@ function jsonResponse(payload, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=UTF-8' },
   });
-}}}}
+}
