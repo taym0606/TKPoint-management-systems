@@ -240,7 +240,6 @@ async function ensureUser(userId, db, userName = null) {
   }
 }
 
-
 function getInteractionDisplayName(interaction, fallback = '') {
   return (
     interaction.member?.nick ??
