@@ -58,7 +58,7 @@ export default {
       return interactionResponse('Unsupported interaction type', true);
     }
 
-  await ensureUsersTableColumns(env.DB);
+    await ensureUsersTableColumns(env.DB);
 
     try {
       return await routeCommand(interaction, env);
@@ -74,6 +74,7 @@ async function routeCommand(interaction, env) {
   const userId = interaction.member?.user?.id ?? interaction.user?.id;
   const userName = getInteractionDisplayName(interaction, userId);
   await ensureUser(userId, env.DB, userName);
+
   switch (command) {
     case 'pt':
       return handlePoint(interaction, userId, env);
@@ -99,7 +100,7 @@ async function routeCommand(interaction, env) {
 }
 
 async function handlePoint(interaction, userId, env) {
-   await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
+  await ensureUser(userId, env.DB, getInteractionDisplayName(interaction, userId));
   const row = await env.DB.prepare('SELECT point FROM users WHERE user_id = ?').bind(userId).first();
   const displayName = getInteractionDisplayName(interaction, userId);
   return interactionResponse(`${displayName} の現在pt: **${formatPoint(row?.point ?? 0)}**`);
@@ -114,7 +115,7 @@ async function handleSubmit(interaction, userId, env) {
   }
 
   const difficulty = getStringOption(subcommand.options, 'difficulty');
-  const achievements = getArrayOption(subcommand.options, 'achievements');
+  const achievements = getSelectedAchievements(subcommand.options);
   const options = getArrayOption(subcommand.options, 'options');
   const multiplied = getBooleanOption(subcommand.options, 'multiplied');
 
@@ -440,6 +441,25 @@ async function handleAdd(interaction, userId, env) {
 }
 
 
+async function ensureUsersTableColumns(db) {
+  try {
+    await db.prepare("ALTER TABLE users ADD COLUMN user_name TEXT DEFAULT ''").run();
+  } catch {
+    // already exists
+  }
+}
+
+function getInteractionDisplayName(interaction, fallback = '') {
+  return (
+    interaction.member?.nick ??
+    interaction.member?.user?.global_name ??
+    interaction.member?.user?.username ??
+    interaction.user?.global_name ??
+    interaction.user?.username ??
+    fallback
+  );
+}
+
 async function fetchDiscordDisplayName(userId, env) {
   const botToken = env.DISCORD_BOT_TOKEN;
   if (!botToken) return userId;
@@ -497,6 +517,23 @@ function getNumberOption(options = [], name) {
 
 function getBooleanOption(options = [], name) {
   return Boolean(options?.find((x) => x.name === name)?.value);
+}
+
+function getSelectedAchievements(options = []) {
+  const csv = getArrayOption(options, 'achievements');
+  if (csv.length > 0) return csv;
+
+  const map = [
+    ['sss', 'SSS'],
+    ['sss_plus', 'SSS+'],
+    ['fc', 'FC'],
+    ['fc_plus', 'FC+'],
+    ['ap', 'AP'],
+    ['ap_plus', 'AP+'],
+    ['star5', '星5'],
+  ];
+
+  return map.filter(([key]) => getBooleanOption(options, key)).map(([, label]) => label);
 }
 
 function getArrayOption(options = [], name) {
@@ -589,4 +626,3 @@ function jsonResponse(payload, status = 200) {
     headers: { 'content-type': 'application/json; charset=UTF-8' },
   });
 }
-
