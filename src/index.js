@@ -232,7 +232,7 @@ async function handleStartBattle(interaction, userId, env) {
 
   return interactionResponse(
     nextStatus === 'active'
-      ? `ベット確定するね♪  二人の掛けた金額は...${betA}と${betB}だよ！合計は${betA + betB}`
+      ? `ベット確定するね♪  二人の掛けた金額は...<@${battle.player_a}>:${betA}と<@${battle.player_b}>:${betB}だよ！合計は${betA + betB}`
       : `ベット受付するね♪ 相手の入力待ちだよ～！`
   );
 }
