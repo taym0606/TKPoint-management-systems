@@ -261,14 +261,19 @@ function calculateScorePoint({ difficulty, achievements, options }) {
     : 0;
 }
 
-function normalizeAchievements(list) {
 function getCurrentWeekId() {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const days = Math.floor((now - start) / 86400000);
-  return Number(`${now.getUTCFullYear()}${String(Math.ceil((days + start.getUTCDay() + 1) / 7)).padStart(2, '0')}`);
+  return Number(
+    `${now.getUTCFullYear()}${String(Math.ceil((days + start.getUTCDay() + 1) / 7)).padStart(2, '0')}`
+  );
 }
+
+function normalizeAchievements(list) {
+  // ここで使える
 }
+
 
 function getMonthStartTimestamp() {
   const now = new Date();
