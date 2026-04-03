@@ -49,3 +49,22 @@ CREATE TABLE IF NOT EXISTS logs (
   value REAL,
   created_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS songs (
+  song_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  artist TEXT NOT NULL,
+  version TEXT NOT NULL,
+  chart_type TEXT NOT NULL,
+  synced_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS song_charts (
+  song_id TEXT NOT NULL,
+  chart_set TEXT NOT NULL,
+  difficulty TEXT NOT NULL,
+  level TEXT NOT NULL,
+  level_value INTEGER,
+  synced_at INTEGER NOT NULL,
+  PRIMARY KEY (song_id, chart_set, difficulty)
+);

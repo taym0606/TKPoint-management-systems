@@ -6,25 +6,50 @@ const DISCORD_INTERACTION_TYPE = {
 const DISCORD_RESPONSE_TYPE = {
   PONG: 1,
   CHANNEL_MESSAGE_WITH_SOURCE: 4,
+  DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE: 5,
 };
 
 const EPHEMERAL_FLAG = 1 << 6;
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
+const OTOGE_DB_SONG_URLS = [
+  'https://otoge-db.net/maimai/data/maimai_songs.json',
+  'https://raw.githubusercontent.com/zvuc/otoge-db/master/maimai/data/maimai_songs.json',
+];
+
+const SONG_DIFFICULTY_FIELD_MAP = [
+  { field: 'lev_bas', chartSet: 'STD', difficulty: 'BASIC' },
+  { field: 'lev_adv', chartSet: 'STD', difficulty: 'ADVANCED' },
+  { field: 'lev_exp', chartSet: 'STD', difficulty: 'EXPERT' },
+  { field: 'lev_mas', chartSet: 'STD', difficulty: 'MASTER' },
+  { field: 'lev_remas', chartSet: 'STD', difficulty: 'Re:MASTER' },
+  { field: 'dx_lev_bas', chartSet: 'DX', difficulty: 'BASIC' },
+  { field: 'dx_lev_adv', chartSet: 'DX', difficulty: 'ADVANCED' },
+  { field: 'dx_lev_exp', chartSet: 'DX', difficulty: 'EXPERT' },
+  { field: 'dx_lev_mas', chartSet: 'DX', difficulty: 'MASTER' },
+  { field: 'dx_lev_remas', chartSet: 'DX', difficulty: 'Re:MASTER' },
+  { field: 'lev_utage', chartSet: 'UTAGE', difficulty: 'UTAGE' },
+];
+
+const BASE_SUBMISSION_POINT = 1;
+
 const ACHIEVEMENT_POINTS = {
-  SSS: 0.5,
-  'SSS+': 1,
+  SSS: 1,
+  'SSS+': 1.5,
+  SCORE_1008500: 2,
   FC: 0.5,
-  'FC+': 1,
-  AP: 2.5,
-  'AP+': 4,
-  '星5': 2.5,
+  'FC+': 2,
+  AP: 3,
+  'AP+': 7,
+  STAR4: 0.5,
+  STAR5: 3,
+  SAME4: 2,
 };
 
-const OPTION_POINTS = {
-  明るいバー: 1.5,
-  'スライド+1': 0.5,
-  全反転: 0.5,
+const SPECIAL_OPTION_POINTS = {
+  BRIGHT_BAR: 2,
+  SLIDE_PLUS_ONE: 0.5,
+  MIRROR: 0.3,
 };
 
 const DIFFICULTY_MULTIPLIER = {
@@ -34,7 +59,7 @@ const DIFFICULTY_MULTIPLIER = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method !== 'POST') {
       return jsonResponse({ error: 'Method Not Allowed' }, 405);
     }
@@ -59,9 +84,10 @@ export default {
     }
 
     await ensureUsersTableColumns(env.DB);
+    await ensureSongTables(env.DB);
 
     try {
-      return await routeCommand(interaction, env);
+      return await routeCommand(interaction, env, ctx);
     } catch (error) {
       console.error(error);
       return interactionResponse('内部が壊れてるかも...りむのんに連絡お願い～', true);
@@ -69,7 +95,7 @@ export default {
   },
 };
 
-async function routeCommand(interaction, env) {
+async function routeCommand(interaction, env, ctx) {
   const command = interaction.data?.name;
   const userId = interaction.member?.user?.id ?? interaction.user?.id;
   const userName = getInteractionDisplayName(interaction, userId);
@@ -96,6 +122,10 @@ async function routeCommand(interaction, env) {
       return handleRanking(env);
     case 'add':
       return handleAdd(interaction, userId, env);
+    case 'updatesongs':
+      return handleUpdateSongs(interaction, env, ctx);
+    case 'omikuzi':
+      return handleOmikuzi(interaction, env);
     default:
       return interactionResponse(`未対応コマンド: ${command}`, true);
   }
@@ -118,7 +148,7 @@ async function handleSubmit(interaction, userId, env) {
 
   const difficulty = getStringOption(subcommand.options, 'difficulty');
   const achievements = getSelectedAchievements(subcommand.options);
-  const options = getArrayOption(subcommand.options, 'options');
+  const options = getSelectedSpecialOptions(subcommand.options);
   const multiplied = getBooleanOption(subcommand.options, 'multiplied');
 
   if (!DIFFICULTY_MULTIPLIER[difficulty]) {
@@ -154,9 +184,16 @@ async function handleSubmit(interaction, userId, env) {
 
   await logAction(env.DB, userId, 'submit_score_request', score);
 
+  const achievementSummary = formatSubmitSelection(achievements, formatAchievementLabel);
+  const optionSummary = formatSubmitSelection(options, formatSpecialOptionLabel);
+
   return interactionResponse(
-    `君の今回頑張ったスコアを申請したよ! requestId: \
-${requestId}\n君の今回のポイントは...**${formatPoint(score)}**pt（承認待ち）`
+    `スコア申請を受け付けたよ! requestId: ${requestId}
+難易度: ${difficulty}
+達成項目: ${achievementSummary}
+特殊項目: ${optionSummary}
+週倍率: ${multiplied ? 'あり' : 'なし'}
+今回のポイント: **${formatPoint(score)}**pt（承認待ち）`
   );
 }
 
@@ -501,6 +538,129 @@ async function handleAdd(interaction, userId, env) {
   );
 }
 
+async function handleUpdateSongs(interaction, env, ctx) {
+  if (!isAdmin(interaction, env)) {
+    return interactionResponse('このコマンドは運営のみ使用できます。', true);
+  }
+
+  ctx.waitUntil(processSongUpdate(interaction, env));
+  return deferredInteractionResponse('曲データ更新を開始しました。完了後に結果を送信します。');
+}
+
+async function handleOmikuzi(interaction, env) {
+  const level = getStringOption(interaction.data?.options, 'difficulty');
+  if (!isValidOmikuziLevel(level)) {
+    return interactionResponse('difficulty は 1 から 15 の範囲で、7+ などを含めて指定してください。', true);
+  }
+
+  const song = await env.DB.prepare(
+    `SELECT DISTINCT s.song_id, s.title, s.artist, s.version, s.chart_type
+     FROM songs s
+     INNER JOIN song_charts c ON c.song_id = s.song_id
+     WHERE c.level = ? AND c.chart_set IN ('STD', 'DX')
+     ORDER BY RANDOM()
+     LIMIT 1`
+  ).bind(level).first();
+
+  if (!song) {
+    return interactionResponse(
+      `レベル ${level} の曲データがありません。先に /updatesongs を実行してください。`,
+      true
+    );
+  }
+
+  const matched = await env.DB.prepare(
+    `SELECT chart_set, difficulty, level
+     FROM song_charts
+     WHERE song_id = ? AND level = ? AND chart_set IN ('STD', 'DX')
+     ORDER BY CASE chart_set WHEN 'STD' THEN 0 WHEN 'DX' THEN 1 ELSE 2 END, difficulty`
+  ).bind(song.song_id, level).all();
+
+  const matchedCharts = (matched.results ?? []).map(
+    (chart) => `${chart.chart_set} ${chart.difficulty} ${chart.level}`
+  );
+
+  return interactionResponse(
+    [
+      `レベル ${level} おみくじ結果`,
+      `曲名: **${song.title}**`,
+      `アーティスト: ${song.artist}`,
+      `バージョン: ${song.version}`,
+      `種別: ${song.chart_type}`,
+      `該当譜面: ${matchedCharts.join(' / ') || 'なし'}`,
+    ].join('\n')
+  );
+}
+
+async function processSongUpdate(interaction, env) {
+  try {
+    const songs = await fetchOtogeDbSongs();
+    if (!songs.length) {
+      await sendInteractionFollowup(interaction, '曲データを取得できませんでした。');
+      return;
+    }
+
+    const syncedAt = Date.now();
+    const batchSize = 100;
+    let songCount = 0;
+    let chartCount = 0;
+    let statements = [];
+
+    for (const rawSong of songs) {
+      const song = normalizeOtogeSong(rawSong);
+      if (!song) continue;
+
+      songCount += 1;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO songs (song_id, title, artist, version, chart_type, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(song_id) DO UPDATE SET
+             title = excluded.title,
+             artist = excluded.artist,
+             version = excluded.version,
+             chart_type = excluded.chart_type,
+             synced_at = excluded.synced_at`
+        ).bind(song.songId, song.title, song.artist, song.version, song.chartType, syncedAt)
+      );
+
+      for (const chart of song.charts) {
+        chartCount += 1;
+        statements.push(
+          env.DB.prepare(
+            `INSERT INTO song_charts (song_id, chart_set, difficulty, level, level_value, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(song_id, chart_set, difficulty) DO UPDATE SET
+               level = excluded.level,
+               level_value = excluded.level_value,
+               synced_at = excluded.synced_at`
+          ).bind(song.songId, chart.chartSet, chart.difficulty, chart.level, chart.levelValue, syncedAt)
+        );
+      }
+
+      if (statements.length >= batchSize) {
+        await env.DB.batch(statements);
+        statements = [];
+      }
+    }
+
+    if (statements.length > 0) {
+      await env.DB.batch(statements);
+    }
+
+    await env.DB.prepare('DELETE FROM song_charts WHERE synced_at <> ?').bind(syncedAt).run();
+    await env.DB.prepare('DELETE FROM songs WHERE synced_at <> ?').bind(syncedAt).run();
+
+    await sendInteractionFollowup(
+      interaction,
+      `曲データを更新しました。\n対象曲数: ${songCount} 曲\n譜面数: ${chartCount} 件\n更新元: OTOGE DB`
+    );
+  } catch (error) {
+    console.error(error);
+    await sendInteractionFollowup(interaction, `曲データ更新に失敗しました: ${error.message}`);
+  }
+}
+
 
 async function ensureUsersTableColumns(db) {
   try {
@@ -508,6 +668,31 @@ async function ensureUsersTableColumns(db) {
   } catch {
     // already exists
   }
+}
+
+async function ensureSongTables(db) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS songs (
+      song_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL,
+      version TEXT NOT NULL,
+      chart_type TEXT NOT NULL,
+      synced_at INTEGER NOT NULL
+    )`
+  ).run();
+
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS song_charts (
+      song_id TEXT NOT NULL,
+      chart_set TEXT NOT NULL,
+      difficulty TEXT NOT NULL,
+      level TEXT NOT NULL,
+      level_value INTEGER,
+      synced_at INTEGER NOT NULL,
+      PRIMARY KEY (song_id, chart_set, difficulty)
+    )`
+  ).run();
 }
 
 function getInteractionDisplayName(interaction, fallback = '') {
@@ -541,9 +726,9 @@ function calculateScorePoint({ difficulty, achievements, options }) {
   const normalized = normalizeAchievements(achievements);
   const hasAtLeastSSS = normalized.includes('SSS') || normalized.includes('SSS+');
 
-  const basic = normalized.reduce((sum, key) => sum + (ACHIEVEMENT_POINTS[key] ?? 0), 0);
+  const basic = BASE_SUBMISSION_POINT + normalized.reduce((sum, key) => sum + (ACHIEVEMENT_POINTS[key] ?? 0), 0);
   const option = hasAtLeastSSS
-    ? options.reduce((sum, key) => sum + (OPTION_POINTS[key] ?? 0), 0)
+    ? normalizeSpecialOptions(options).reduce((sum, key) => sum + (SPECIAL_OPTION_POINTS[key] ?? 0), 0)
     : 0;
 
   return (basic + option) * DIFFICULTY_MULTIPLIER[difficulty];
@@ -553,6 +738,10 @@ function normalizeAchievements(list) {
   const set = new Set(list);
   if (set.has('SSS+')) set.delete('SSS');
   return [...set];
+}
+
+function normalizeSpecialOptions(list) {
+  return [...new Set(list)];
 }
 
 function getCurrentWeekId() {
@@ -582,19 +771,37 @@ function getBooleanOption(options = [], name) {
 
 function getSelectedAchievements(options = []) {
   const csv = getArrayOption(options, 'achievements');
-  if (csv.length > 0) return csv;
+  if (csv.length > 0) return csv.map(normalizeAchievementLabel).filter(Boolean);
 
   const map = [
     ['sss', 'SSS'],
     ['sss_plus', 'SSS+'],
+    ['score_1008500', 'SCORE_1008500'],
     ['fc', 'FC'],
     ['fc_plus', 'FC+'],
     ['ap', 'AP'],
     ['ap_plus', 'AP+'],
-    ['star5', '星5'],
+    ['star4', 'STAR4'],
+    ['star5', 'STAR5'],
+    ['same4', 'SAME4'],
   ];
 
   return map.filter(([key]) => getBooleanOption(options, key)).map(([, label]) => label);
+}
+
+function getSelectedSpecialOptions(options = []) {
+  const csv = getArrayOption(options, 'options').map(normalizeSpecialOptionLabel).filter(Boolean);
+
+  const map = [
+    ['bright_bar', 'BRIGHT_BAR'],
+    ['slide_plus_one', 'SLIDE_PLUS_ONE'],
+    ['mirror', 'MIRROR'],
+  ];
+
+  return [
+    ...csv,
+    ...map.filter(([key]) => getBooleanOption(options, key)).map(([, label]) => label),
+  ];
 }
 
 function getArrayOption(options = [], name) {
@@ -607,6 +814,212 @@ function getArrayOption(options = [], name) {
       .filter(Boolean);
   }
   return [];
+}
+
+function normalizeAchievementLabel(label) {
+  const value = String(label ?? '').trim().toUpperCase();
+  const map = {
+    SSS: 'SSS',
+    'SSS+': 'SSS+',
+    '100.8500': 'SCORE_1008500',
+    '100.8500+': 'SCORE_1008500',
+    SCORE_1008500: 'SCORE_1008500',
+    FC: 'FC',
+    'FC+': 'FC+',
+    AP: 'AP',
+    'AP+': 'AP+',
+    STAR4: 'STAR4',
+    '星4': 'STAR4',
+    STAR5: 'STAR5',
+    '星5': 'STAR5',
+    SAME4: 'SAME4',
+    '下4桁ゾロ目': 'SAME4',
+  };
+
+  return map[value] ?? null;
+}
+
+function normalizeSpecialOptionLabel(label) {
+  const value = String(label ?? '').trim().toUpperCase();
+  const map = {
+    BRIGHT_BAR: 'BRIGHT_BAR',
+    '明るいバー': 'BRIGHT_BAR',
+    SLIDE_PLUS_ONE: 'SLIDE_PLUS_ONE',
+    'スライド+1': 'SLIDE_PLUS_ONE',
+    MIRROR: 'MIRROR',
+    '全反転': 'MIRROR',
+  };
+
+  return map[value] ?? null;
+}
+
+function formatSubmitSelection(list, formatter) {
+  if (!list.length) {
+    return 'なし';
+  }
+
+  return [...new Set(list)].map((item) => formatter(item)).join(', ');
+}
+
+function formatAchievementLabel(label) {
+  const map = {
+    SSS: 'SSS',
+    'SSS+': 'SSS+',
+    SCORE_1008500: '100.8500+',
+    FC: 'FC',
+    'FC+': 'FC+',
+    AP: 'AP',
+    'AP+': 'AP+',
+    STAR4: '星4',
+    STAR5: '星5',
+    SAME4: '下4桁ゾロ目',
+  };
+
+  return map[label] ?? label;
+}
+
+function formatSpecialOptionLabel(label) {
+  const map = {
+    BRIGHT_BAR: '明るいバー',
+    SLIDE_PLUS_ONE: 'スライド+1',
+    MIRROR: '全反転',
+  };
+
+  return map[label] ?? label;
+}
+
+async function fetchOtogeDbSongs() {
+  let lastError = null;
+
+  for (const url of OTOGE_DB_SONG_URLS) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: 'application/json,text/plain;q=0.9,*/*;q=0.8',
+          'user-agent': 'TKPoint-management-systems/1.0',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`fetch failed: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (Array.isArray(payload) && payload.length > 0) {
+        return payload;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error('failed to fetch OTOGE DB songs');
+}
+
+function normalizeOtogeSong(song) {
+  const songId = String(song?.sort ?? '').trim();
+  const title = String(song?.title ?? '').trim();
+  const artist = String(song?.artist ?? '').trim();
+  const versionCode = String(song?.version ?? '').trim();
+
+  if (!songId || !title || !artist || !versionCode) {
+    return null;
+  }
+
+  const charts = SONG_DIFFICULTY_FIELD_MAP.flatMap(({ field, chartSet, difficulty }) => {
+    const level = String(song?.[field] ?? '').trim();
+    if (!level) return [];
+
+    return [
+      {
+        chartSet,
+        difficulty,
+        level,
+        levelValue: parseLevelValue(level),
+      },
+    ];
+  });
+
+  if (charts.length === 0) {
+    return null;
+  }
+
+  return {
+    songId,
+    title,
+    artist,
+    version: formatMaimaiVersion(versionCode),
+    chartType: deriveChartType(charts),
+    charts,
+  };
+}
+
+function parseLevelValue(level) {
+  const match = String(level ?? '').match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function deriveChartType(charts) {
+  const sets = new Set(charts.map((chart) => chart.chartSet));
+  const hasStd = sets.has('STD');
+  const hasDx = sets.has('DX');
+
+  if (hasStd && hasDx) return 'STD/DX';
+  if (hasDx) return 'DX';
+  if (hasStd) return 'STD';
+  if (sets.has('UTAGE')) return 'UTAGE';
+  return 'UNKNOWN';
+}
+
+function isValidOmikuziLevel(level) {
+  return new Set([
+    '1', '2', '3', '4', '5', '6', '7', '7+', '8', '8+', '9', '9+', '10', '10+',
+    '11', '11+', '12', '12+', '13', '13+', '14', '14+', '15',
+  ]).has(String(level ?? '').trim());
+}
+
+function formatMaimaiVersion(versionCode) {
+  const code = Number(versionCode);
+  if (!Number.isFinite(code)) {
+    return versionCode;
+  }
+
+  const versionMap = [
+    [26500, 'CiRCLE'],
+    [26000, 'PRiSM PLUS'],
+    [25500, 'PRiSM'],
+    [25000, 'BUDDiES PLUS'],
+    [24500, 'BUDDiES'],
+    [24000, 'FESTiVAL PLUS'],
+    [23500, 'FESTiVAL'],
+    [23000, 'UNiVERSE PLUS'],
+    [22500, 'UNiVERSE'],
+    [22000, 'Splash PLUS'],
+    [21500, 'Splash'],
+    [21000, 'でらっくす PLUS'],
+    [20500, 'でらっくす'],
+    [20000, 'FiNALE'],
+    [19500, 'MiLK PLUS'],
+    [19000, 'MiLK'],
+    [18500, 'MURASAKi PLUS'],
+    [18000, 'MURASAKi'],
+    [17000, 'PiNK PLUS'],
+    [16000, 'PiNK'],
+    [15000, 'ORANGE PLUS'],
+    [14000, 'ORANGE'],
+    [13000, 'GreeN PLUS'],
+    [12000, 'GreeN'],
+    [11000, 'maimai PLUS'],
+    [10000, 'maimai'],
+  ];
+
+  for (const [threshold, label] of versionMap) {
+    if (code >= threshold) {
+      return label;
+    }
+  }
+
+  return versionCode;
 }
 
 function getUserOption(options = [], name) {
@@ -669,6 +1082,32 @@ function hexToBytes(hex) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
+}
+
+function deferredInteractionResponse(content, ephemeral = false) {
+  return jsonResponse({
+    type: DISCORD_RESPONSE_TYPE.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      ...(content ? { content } : {}),
+      ...(ephemeral ? { flags: EPHEMERAL_FLAG } : {}),
+    },
+  });
+}
+
+async function sendInteractionFollowup(interaction, content) {
+  const applicationId = interaction.application_id;
+  const interactionToken = interaction.token;
+  if (!applicationId || !interactionToken) {
+    return;
+  }
+
+  await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json; charset=UTF-8',
+    },
+    body: JSON.stringify({ content }),
+  });
 }
 
 function interactionResponse(content, ephemeral = false) {
