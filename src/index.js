@@ -155,19 +155,9 @@ async function handleSubmit(interaction, userId, env) {
     return interactionResponse('difficulty は 14+ / 14 / 13+ だけだよ！', true);
   }
 
-  const weekId = getCurrentWeekId();
-  const duplicate = await env.DB.prepare(
-    'SELECT id FROM score_submissions WHERE user_id = ? AND difficulty = ? AND week_id = ?'
-  )
-    .bind(userId, difficulty, weekId)
-    .first();
-
-  if (duplicate) {
-    return interactionResponse('すでに申請済みだよ～！ずるしないでね', true);
-  }
-
   const score = calculateScorePoint({ difficulty, achievements, options, multiplied });
   const requestId = crypto.randomUUID();
+  const weekId = getCurrentWeekId();
 
   await env.DB.prepare(
     `INSERT INTO requests (id, type, user_id, data, calculated_point, status, created_at)
@@ -396,12 +386,6 @@ async function handleApprove(interaction, userId, env) {
     await ensureUser(req.user_id, env.DB);
     await env.DB.prepare('UPDATE users SET point = point + ? WHERE user_id = ?')
       .bind(req.calculated_point, req.user_id)
-      .run();
-
-    await env.DB.prepare(
-      'INSERT OR IGNORE INTO score_submissions (user_id, difficulty, week_id) VALUES (?, ?, ?)'
-    )
-      .bind(req.user_id, data.difficulty, data.weekId)
       .run();
 
     await logAction(env.DB, req.user_id, 'approve_score', req.calculated_point);
